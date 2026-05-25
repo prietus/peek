@@ -88,7 +88,7 @@ fn scan_dir(dir: &Path, recursive: bool, out: &mut Vec<PathBuf>) -> Result<()> {
             if recursive {
                 scan_dir(&path, true, out)?;
             }
-        } else if has_image_ext(&path) {
+        } else if has_media_ext(&path) {
             out.push(path);
         }
     }
@@ -101,6 +101,15 @@ pub fn has_image_ext(path: &Path) -> bool {
         .map(|e| e.to_ascii_lowercase())
         .map(|e| IMAGE_EXTS.contains(&e.as_str()))
         .unwrap_or(false)
+}
+
+/// True for images, plus videos when ffmpeg is installed. Videos are filtered
+/// out when ffmpeg is missing so the user doesn't see broken thumbs.
+pub fn has_media_ext(path: &Path) -> bool {
+    if has_image_ext(path) {
+        return true;
+    }
+    crate::video::is_video(path) && crate::video::ffmpeg_available()
 }
 
 fn sort_files(files: &mut [PathBuf], mode: SortMode) {

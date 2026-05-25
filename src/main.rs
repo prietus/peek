@@ -3,6 +3,7 @@ mod detect;
 mod files;
 mod grid;
 mod render;
+mod video;
 mod viewer;
 
 use std::path::PathBuf;

@@ -9,6 +9,7 @@ edit operations, and copy/move workflows — all without leaving the terminal.
 - **Auto-detected protocols**: Kitty graphics, Sixel, iTerm2 inline images, half-blocks fallback.
 - **Grid view** (default when pointed at a directory) with on-disk thumbnail cache (`$XDG_CACHE_HOME/peek/thumbs/`).
 - **Animated GIF and WebP** playback with per-frame delays.
+- **Video previews** (mp4 / mkv / webm / mov / avi / m4v / mpeg) when `ffmpeg` is on PATH — thumbnail in grid, short looping animation on open. No audio, no seek.
 - **Slideshow** mode (`--slideshow N`, `P` to play/pause).
 - **Edit ops**: rotate, flip, crop (`c`), save-as. Rotating/flipping/cropping an
   animation collapses it to the current frame.
@@ -87,6 +88,8 @@ Press `?` inside the viewer for the full list.
 - A terminal that supports one of: Kitty graphics, Sixel, iTerm2 inline images.
   Half-blocks rendering is used as fallback in plain terminals.
 - Rust 1.85+ (edition 2024).
+- Optional: `ffmpeg` on PATH to enable video previews. Videos are silently
+  skipped when ffmpeg isn't found, so images keep working as before.
 
 ## License
 

@@ -765,6 +765,10 @@ impl Viewer {
                 self.help_open = true;
                 self.redraw_all()?;
             }
+            KeyCode::Char('i') => {
+                self.info_open = true;
+                self.redraw_all()?;
+            }
             KeyCode::Char('d') => {
                 self.confirm_delete = true;
                 self.draw_status_only()?;
@@ -1608,7 +1612,7 @@ impl Viewer {
             ("+ =".into(), "zoom in".into()),
             ("-".into(), "zoom out".into()),
             ("0".into(), "reset zoom & pan".into()),
-            ("i".into(), "info panel".into()),
+            ("i".into(), "info panel (also in grid)".into()),
             (String::new(), String::new()),
             ("r R".into(), "rotate CW / CCW".into()),
             ("f F".into(), "flip horizontal / vertical".into()),
@@ -1627,7 +1631,14 @@ impl Viewer {
     }
 
     fn draw_info_popup(&self, cols: u16, rows: u16) -> Result<()> {
-        let path = &self.files[self.index];
+        // In grid mode the popup describes the highlighted thumb; in view
+        // mode it describes the image currently on screen.
+        let target_index = self
+            .grid
+            .as_ref()
+            .map(|g| g.selected)
+            .unwrap_or(self.index);
+        let path = &self.files[target_index];
         let name = path
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
@@ -1639,8 +1650,18 @@ impl Viewer {
             .map(|e| e.to_ascii_uppercase())
             .unwrap_or_else(|| "?".into());
         let loaded = self.loaded.as_ref().filter(|l| &l.path == path);
+        // Cheap header-only dimension lookup when the image isn't in memory.
         let dims = loaded
             .map(|l| format!("{} × {}", l.img.width(), l.img.height()))
+            .or_else(|| {
+                image::ImageReader::open(path)
+                    .ok()?
+                    .with_guessed_format()
+                    .ok()?
+                    .into_dimensions()
+                    .ok()
+                    .map(|(w, h)| format!("{w} × {h}"))
+            })
             .unwrap_or_else(|| "(unavailable)".into());
         let modified = loaded.map(|l| l.modified).unwrap_or(false);
         let frames = loaded.and_then(|l| l.frames.as_ref().map(|f| f.len()));
@@ -1785,6 +1806,22 @@ fn image_cell_rect(img_w: u32, img_h: u32, cols: u16, rows: u16) -> (u16, u16, u
 }
 
 fn load_image(path: &std::path::Path) -> Result<Loaded> {
+    // Videos: extract a short looping preview as a frame sequence and treat
+    // it like an animated GIF/WebP. No audio, no seek — just a visual peek.
+    if crate::video::is_video(path) {
+        let (imgs, delay) = crate::video::extract_preview(path)?;
+        let first = imgs[0].clone();
+        let frames: Vec<Frame> = imgs.into_iter().map(|img| Frame { img, delay }).collect();
+        return Ok(Loaded {
+            path: path.to_path_buf(),
+            img: first,
+            modified: false,
+            frames: Some(frames),
+            frame_idx: 0,
+            frame_last: Instant::now(),
+        });
+    }
+
     let ext = path
         .extension()
         .and_then(|e| e.to_str())

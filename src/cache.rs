@@ -46,6 +46,8 @@ pub fn thumb_cache_dir() -> Option<PathBuf> {
 /// Load the thumbnail for `path` from disk, falling back to decoding the
 /// original + downsampling + writing to cache. Cache misses cost the same as
 /// before; cache hits skip the full decode of the source image.
+/// Videos route through ffmpeg, which writes a representative frame straight
+/// to the cache slot so subsequent loads are pure image::open.
 pub fn load_or_build_thumb(path: &Path, thumb_max: u32) -> Result<DynamicImage> {
     let cache_path = thumb_cache_path(path, thumb_max);
     if let Some(cp) = cache_path.as_ref() {
@@ -53,6 +55,15 @@ pub fn load_or_build_thumb(path: &Path, thumb_max: u32) -> Result<DynamicImage> 
             return Ok(img);
         }
     }
+
+    if crate::video::is_video(path) {
+        let cp = cache_path
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no cache dir available for video thumbnail"))?;
+        crate::video::extract_thumb_to(path, cp, thumb_max)?;
+        return Ok(image::open(cp)?);
+    }
+
     let img = image::open(path)?;
     let thumb = img.thumbnail(thumb_max, thumb_max);
     if let Some(cp) = cache_path.as_ref() {
