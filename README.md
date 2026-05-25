@@ -1,4 +1,4 @@
-# peek
+# ipeek
 
 Terminal image viewer for Kitty, Sixel, iTerm2 and half-block terminals. Browse single
 files or whole directories, with grid view, animated GIF/WebP playback, slideshow,
@@ -29,22 +29,22 @@ Or build a release binary:
 
 ```sh
 cargo build --release
-# binary at target/release/peek
+# binary at target/release/ipeek
 ```
 
 ## Usage
 
 ```sh
-peek                       # browse current directory in grid view
-peek photo.png             # open a single image
-peek ~/Pictures            # grid view of a directory
-peek -r ~/Pictures         # recurse into subdirectories
-peek --sort date ~/shots   # sort by mtime
-peek --slideshow 3 album/  # auto-advance every 3 seconds
-peek -f playlist.txt       # read paths from a file
-ls *.jpg | peek -f -       # read paths from stdin
-peek --one-shot -1 a.png   # render once and exit (no TUI)
-peek --protocol sixel x.gif
+ipeek                       # browse current directory in grid view
+ipeek photo.png             # open a single image
+ipeek ~/Pictures            # grid view of a directory
+ipeek -r ~/Pictures         # recurse into subdirectories
+ipeek --sort date ~/shots   # sort by mtime
+ipeek --slideshow 3 album/  # auto-advance every 3 seconds
+ipeek -f playlist.txt       # read paths from a file
+ls *.jpg | ipeek -f -       # read paths from stdin
+ipeek --one-shot -1 a.png   # render once and exit (no TUI)
+ipeek --protocol sixel x.gif
 ```
 
 ## Key bindings

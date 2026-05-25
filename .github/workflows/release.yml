@@ -18,10 +18,10 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
-            archive: peek-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
+            archive: ipeek-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            archive: peek-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
+            archive: ipeek-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
 
     steps:
       - uses: actions/checkout@v4
@@ -83,7 +83,7 @@ jobs:
           MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
         run: |
           set -euo pipefail
-          BIN="target/${{ matrix.target }}/release/peek"
+          BIN="target/${{ matrix.target }}/release/ipeek"
 
           # Resolve the identity by SHA-1 to avoid name-matching pitfalls.
           # Prefer the one whose CN matches MACOS_SIGNING_IDENTITY; fall back
@@ -114,9 +114,9 @@ jobs:
           MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
         run: |
           set -euo pipefail
-          ZIP_PATH="$RUNNER_TEMP/peek-notarize.zip"
+          ZIP_PATH="$RUNNER_TEMP/ipeek-notarize.zip"
           ditto -c -k --keepParent \
-            "target/${{ matrix.target }}/release/peek" "$ZIP_PATH"
+            "target/${{ matrix.target }}/release/ipeek" "$ZIP_PATH"
           xcrun notarytool submit "$ZIP_PATH" \
             --apple-id "$MACOS_NOTARY_APPLE_ID" \
             --password "$MACOS_NOTARY_PWD" \
@@ -128,9 +128,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/peek dist/peek
+          cp target/${{ matrix.target }}/release/ipeek dist/ipeek
           cp README.md LICENSE dist/
-          tar -C dist -czf ${{ matrix.archive }} peek README.md LICENSE
+          tar -C dist -czf ${{ matrix.archive }} ipeek README.md LICENSE
           shasum -a 256 ${{ matrix.archive }} > ${{ matrix.archive }}.sha256
 
       - name: Upload artifacts
