@@ -7,7 +7,7 @@ edit operations, and copy/move workflows — all without leaving the terminal.
 ## Features
 
 - **Auto-detected protocols**: Kitty graphics, Sixel, iTerm2 inline images, half-blocks fallback.
-- **Grid view** (default when pointed at a directory) with on-disk thumbnail cache (`$XDG_CACHE_HOME/peek/thumbs/`).
+- **Grid view** (default when pointed at a directory) with on-disk thumbnail cache (`$XDG_CACHE_HOME/ipeek/thumbs/`).
 - **Animated GIF and WebP** playback with per-frame delays.
 - **Video previews** (mp4 / mkv / webm / mov / avi / m4v / mpeg) when `ffmpeg` is on PATH — thumbnail in grid, short looping animation on open. No audio, no seek.
 - **Slideshow** mode (`--slideshow N`, `P` to play/pause).
@@ -53,16 +53,20 @@ ipeek --protocol sixel x.gif
 
 | Key | Action |
 |-----|--------|
-| `n` / `→` / `Space` | next image |
-| `p` / `←` | previous image |
+| `n` / `Space` | next image |
+| `p` | previous image |
+| `j` `k` / `↓` `↑` / `→` `←` | next / previous (pan when zoomed) |
+| `h` / `l` | pan left / right when zoomed |
 | `g` / `G` | first / last |
+| `+` / `-` / `0` | zoom in / out / reset |
 | `r` / `R` | rotate 90° CW / CCW |
-| `h` / `v` | flip horizontal / vertical |
-| `c` | crop mode (arrows resize, `Enter` apply, `Esc` cancel) |
-| `s` | save as… |
+| `f` / `F` | flip horizontal / vertical |
+| `c` | crop mode (`hjkl` move, `HJKL` resize, `a` all, `Enter` apply, `Esc` cancel) |
+| `s` / `S` | save / save as… |
 | `d` | delete (with confirmation) |
 | `Ctrl+R` | reload from disk |
 | `P` | toggle slideshow |
+| `t` / `Tab` | toggle grid |
 | `i` | info overlay |
 | `?` | help |
 | `m` | menu |
@@ -74,6 +78,9 @@ ipeek --protocol sixel x.gif
 |-----|--------|
 | arrows / `hjkl` | move selection |
 | `Enter` | open selected |
+| `g` / `G` | first / last |
+| `i` | info about selected |
+| `t` / `Tab` / `Esc` | back to single view |
 | `Space` | toggle mark |
 | `A` / `u` | mark all / clear all |
 | `y` | copy marked to… |

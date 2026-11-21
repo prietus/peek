@@ -4,6 +4,7 @@ mod files;
 mod grid;
 mod render;
 mod video;
+mod util;
 mod viewer;
 
 use std::path::PathBuf;
@@ -17,7 +18,7 @@ use crate::files::SortMode;
 use crate::viewer::Viewer;
 
 #[derive(Parser, Debug)]
-#[command(name = "peek", about = "Terminal image viewer (Kitty/Sixel/iTerm2/half-blocks)")]
+#[command(name = "ipeek", version, about = "Terminal image viewer (Kitty/Sixel/iTerm2/half-blocks)")]
 struct Args {
     /// Image file, directory, or "-" to read newline-separated paths from stdin.
     /// Defaults to current directory.

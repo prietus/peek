@@ -82,7 +82,7 @@ pub fn extract_preview(path: &Path) -> Result<(Vec<DynamicImage>, Duration)> {
     if !ffmpeg_available() {
         return Err(anyhow!("ffmpeg not found in PATH"));
     }
-    let tmp = TempDir::new("peek-video")?;
+    let tmp = TempDir::new("ipeek-video")?;
     let pattern = tmp.0.join("frame-%05d.jpg");
 
     let status = Command::new("ffmpeg")

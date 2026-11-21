@@ -128,14 +128,13 @@ fn build_canvas(
     let visible = (layout.grid_cols * layout.grid_rows) as usize;
     let end_index = (start_index + visible).min(files.len());
 
-    for i in start_index..end_index {
-        let local = i - start_index;
+    for (local, path) in files[start_index..end_index].iter().enumerate() {
         let col = local % layout.grid_cols as usize;
         let row = local / layout.grid_cols as usize;
         let slot_x = col as u32 * slot_w_px;
         let slot_y = row as u32 * slot_h_px;
 
-        let thumb = match state.ensure_thumb(&files[i]) {
+        let thumb = match state.ensure_thumb(path) {
             Ok(t) => t,
             Err(_) => continue, // skip undecodable files; label still drawn
         };
@@ -173,8 +172,8 @@ fn draw_labels(
     let border = Color::Rgb { r: 100, g: 180, b: 255 };
     let mark_fg = Color::Rgb { r: 120, g: 220, b: 130 };
 
-    for i in start_index..end_index {
-        let local = i - start_index;
+    for (local, path) in files[start_index..end_index].iter().enumerate() {
+        let i = start_index + local;
         let col = (local % layout.grid_cols as usize) as u16;
         let row = (local / layout.grid_cols as usize) as u16;
 
@@ -182,12 +181,12 @@ fn draw_labels(
         let cell_y = row * THUMB_CELLS_H;
         let label_y = cell_y + THUMB_CELLS_H - 1;
 
-        let name = files[i]
+        let name = path
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
         let inner_w = (THUMB_CELLS_W - 2) as usize;
-        let is_marked = marked.contains(&files[i]);
+        let is_marked = marked.contains(path);
         let trimmed: String = name.chars().take(inner_w).collect();
         let rest = format!("{trimmed:<inner_w$} ", inner_w = inner_w);
 

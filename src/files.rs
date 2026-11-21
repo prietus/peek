@@ -20,7 +20,7 @@ pub enum SortMode {
 pub struct Collection {
     pub files: Vec<PathBuf>,
     pub start_index: usize,
-    /// True when the user pointed peek at a directory (so we should open grid).
+    /// True when the user pointed ipeek at a directory (so we should open grid).
     pub started_from_directory: bool,
 }
 
@@ -171,4 +171,43 @@ fn read_filelist(source: &str) -> Result<Vec<PathBuf>> {
         .map(PathBuf::from)
         .filter(|p| p.is_file())
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_ext_is_case_insensitive() {
+        assert!(has_image_ext(Path::new("a/B.JPG")));
+        assert!(has_image_ext(Path::new("x.webp")));
+        assert!(!has_image_ext(Path::new("notes.txt")));
+        assert!(!has_image_ext(Path::new("noext")));
+    }
+
+    #[test]
+    fn shuffle_is_a_permutation() {
+        let mut v: Vec<u32> = (0..100).collect();
+        shuffle(&mut v, 42);
+        assert_ne!(v, (0..100).collect::<Vec<_>>());
+        v.sort();
+        assert_eq!(v, (0..100).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn filelist_skips_comments_blanks_and_missing() {
+        let dir = std::env::temp_dir().join(format!("ipeek-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let img = dir.join("a.png");
+        fs::write(&img, b"x").unwrap();
+        let list = dir.join("list.txt");
+        fs::write(
+            &list,
+            format!("# comment\n\n  {}  \n{}/missing.png\n", img.display(), dir.display()),
+        )
+        .unwrap();
+        let got = read_filelist(list.to_str().unwrap()).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(got, vec![img]);
+    }
 }

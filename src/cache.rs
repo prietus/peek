@@ -32,13 +32,12 @@ pub fn thumb_cache_path(image_path: &Path, thumb_max: u32) -> Option<PathBuf> {
 }
 
 pub fn thumb_cache_dir() -> Option<PathBuf> {
-    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
-        if !xdg.is_empty() {
-            return Some(PathBuf::from(xdg).join("peek").join("thumbs"));
+    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME")
+        && !xdg.is_empty() {
+            return Some(PathBuf::from(xdg).join("ipeek").join("thumbs"));
         }
-    }
     if let Ok(home) = std::env::var("HOME") {
-        return Some(PathBuf::from(home).join(".cache").join("peek").join("thumbs"));
+        return Some(PathBuf::from(home).join(".cache").join("ipeek").join("thumbs"));
     }
     None
 }
@@ -50,11 +49,10 @@ pub fn thumb_cache_dir() -> Option<PathBuf> {
 /// to the cache slot so subsequent loads are pure image::open.
 pub fn load_or_build_thumb(path: &Path, thumb_max: u32) -> Result<DynamicImage> {
     let cache_path = thumb_cache_path(path, thumb_max);
-    if let Some(cp) = cache_path.as_ref() {
-        if let Ok(img) = image::open(cp) {
+    if let Some(cp) = cache_path.as_ref()
+        && let Ok(img) = image::open(cp) {
             return Ok(img);
         }
-    }
 
     if crate::video::is_video(path) {
         let cp = cache_path
