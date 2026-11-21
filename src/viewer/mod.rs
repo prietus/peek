@@ -16,6 +16,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyEventKind};
 use image::DynamicImage;
 
+use crate::config::Config;
 use crate::files::{self, Collection, SortMode};
 use crate::grid::GridState;
 use crate::render::Renderer;
@@ -48,6 +49,7 @@ pub struct Viewer {
     files: Vec<PathBuf>,
     filter: Option<String>,
     sort: SortMode,
+    config: Config,
     index: usize,
     renderer: Box<dyn Renderer>,
     loaded: Option<Loaded>,
@@ -59,6 +61,8 @@ pub struct Viewer {
     pan_y: f32,
     grid: Option<GridState>,
     help_open: bool,
+    /// First help row shown when the keymap is too long for the screen.
+    help_scroll: usize,
     info_open: bool,
     confirm_delete: bool,
     crop: Option<CropState>,
@@ -127,7 +131,16 @@ impl Viewer {
         c: Collection,
         renderer: Box<dyn Renderer>,
         sort: SortMode,
+        config: Config,
+        config_warnings: Vec<String>,
     ) -> Result<Self> {
+        // The TUI hides stderr, so surface config problems in the status bar.
+        let status_msg = match config_warnings.as_slice() {
+            [] => None,
+            [one] => Some(one.clone()),
+            [first, rest @ ..] => Some(format!("{first} (+{} more config warnings)", rest.len())),
+        };
+        let slideshow_secs = config.slideshow_interval.unwrap_or(DEFAULT_SLIDESHOW_SECS);
         // When ipeek was pointed at a directory we land on the grid; with a
         // concrete file we go straight into the single-image view.
         let grid = if c.started_from_directory {
@@ -141,21 +154,23 @@ impl Viewer {
             files: c.files,
             filter: None,
             sort,
+            config,
             index: c.start_index,
             renderer,
             loaded: None,
             menu_selected: None,
             prompt: None,
-            status_msg: None,
+            status_msg,
             zoom: 1.0,
             pan_x: 0.5,
             pan_y: 0.5,
             grid,
             help_open: false,
+            help_scroll: 0,
             info_open: false,
             confirm_delete: false,
             crop: None,
-            slideshow_interval: Duration::from_secs_f32(DEFAULT_SLIDESHOW_SECS),
+            slideshow_interval: Duration::from_secs_f32(slideshow_secs),
             slideshow_running: false,
             slideshow_last: Instant::now(),
             preloader: Preloader::spawn(),

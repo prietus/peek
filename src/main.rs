@@ -1,7 +1,9 @@
 mod cache;
+mod config;
 mod decode;
 mod metadata;
 mod detect;
+mod external;
 mod files;
 mod grid;
 mod render;
@@ -39,9 +41,9 @@ struct Args {
     #[arg(long, short = 'r')]
     recursive: bool,
 
-    /// Sort order for the file list
-    #[arg(long, value_enum, default_value_t = SortMode::Name)]
-    sort: SortMode,
+    /// Sort order for the file list [default: name]
+    #[arg(long, value_enum)]
+    sort: Option<SortMode>,
 
     /// Read newline-separated image paths from this file (use "-" for stdin)
     #[arg(long = "from-file", short = 'f')]
@@ -50,11 +52,36 @@ struct Args {
     /// Auto-advance every N seconds (P toggles play/pause inside the viewer)
     #[arg(long, value_name = "SECONDS")]
     slideshow: Option<f32>,
+
+    /// Read settings from this file instead of ~/.config/ipeek/config
+    #[arg(long, value_name = "FILE", conflicts_with = "no_config")]
+    config: Option<PathBuf>,
+
+    /// Ignore the config file
+    #[arg(long)]
+    no_config: bool,
+
+    /// Print a commented example config file and exit
+    #[arg(long)]
+    print_config: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let protocol = args.protocol.unwrap_or_else(detect::detect);
+    if args.print_config {
+        print!("{}", config::SAMPLE);
+        return Ok(());
+    }
+    let (cfg, warnings) = if args.no_config {
+        Default::default()
+    } else {
+        config::load(args.config.as_deref())?
+    };
+    let protocol = args
+        .protocol
+        .or(cfg.protocol)
+        .unwrap_or_else(detect::detect);
+    let sort = args.sort.or(cfg.sort).unwrap_or(SortMode::Name);
     let renderer = render::for_protocol(protocol);
 
     if args.one_shot {
@@ -71,10 +98,10 @@ fn main() -> Result<()> {
     let collection = files::collect(
         &args.path,
         args.from_file.as_deref(),
-        args.recursive,
-        args.sort,
+        args.recursive || cfg.recursive,
+        sort,
     )?;
-    let mut viewer = Viewer::from_collection(collection, renderer, args.sort)?;
+    let mut viewer = Viewer::from_collection(collection, renderer, sort, cfg, warnings)?;
     if let Some(secs) = args.slideshow {
         viewer.start_slideshow(secs);
     }

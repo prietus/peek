@@ -14,7 +14,22 @@ impl Viewer {
         if matches!(code, KeyCode::Char('c')) && mods.contains(KeyModifiers::CONTROL) {
             return Ok(true);
         }
+        if self.help_open {
+            let delta: isize = match code {
+                KeyCode::Char('j') | KeyCode::Down => 1,
+                KeyCode::Char('k') | KeyCode::Up => -1,
+                KeyCode::PageDown | KeyCode::Char(' ') => 10,
+                KeyCode::PageUp => -10,
+                _ => 0,
+            };
+            if delta != 0 {
+                // draw_help_popup clamps the offset to what's scrollable.
+                self.help_scroll = self.help_scroll.saturating_add_signed(delta);
+                return self.redraw_all().map(|_| false);
+            }
+        }
         self.help_open = false;
+        self.help_scroll = 0;
         self.info_open = false;
         self.redraw_all()?;
         Ok(matches!(code, KeyCode::Char('q')))
@@ -116,6 +131,9 @@ impl Viewer {
     pub(super) fn handle_view_key(&mut self, code: KeyCode, mods: KeyModifiers) -> Result<bool> {
         // Any input clears the transient status message from the previous action.
         self.status_msg = None;
+        if self.try_user_command(code, mods)? {
+            return Ok(false);
+        }
         let zoomed = self.zoom > 1.0;
 
         match code {
@@ -213,6 +231,7 @@ impl Viewer {
                 self.draw_status_only()?;
             }
             KeyCode::Char('P') => self.toggle_slideshow()?,
+            KeyCode::Char('y') => self.copy_image()?,
             _ => self.handle_common_key(code)?,
         }
         Ok(false)
@@ -220,6 +239,9 @@ impl Viewer {
 
     pub(super) fn handle_grid_key(&mut self, code: KeyCode, mods: KeyModifiers) -> Result<bool> {
         self.status_msg = None;
+        if self.try_user_command(code, mods)? {
+            return Ok(false);
+        }
         let Some(grid) = self.grid.as_mut() else {
             return Ok(false);
         };
@@ -364,6 +386,22 @@ impl Viewer {
         Ok(())
     }
 
+    /// Run the config's `cmd.<key>` for this key, if any. Returns true when
+    /// the key was consumed.
+    fn try_user_command(&mut self, code: KeyCode, mods: KeyModifiers) -> Result<bool> {
+        if mods.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+            return Ok(false);
+        }
+        let KeyCode::Char(c) = code else {
+            return Ok(false);
+        };
+        let Some(template) = self.config.commands.get(&c).cloned() else {
+            return Ok(false);
+        };
+        self.run_user_command(&template)?;
+        Ok(true)
+    }
+
     /// Keys that behave the same in the grid and the single-image view.
     fn handle_common_key(&mut self, code: KeyCode) -> Result<()> {
         match code {
@@ -373,6 +411,9 @@ impl Viewer {
             }
             KeyCode::Char(':') => self.open_prompt(PromptKind::Jump, String::new())?,
             KeyCode::Char('O') => self.cycle_sort()?,
+            KeyCode::Char('o') => self.open_external()?,
+            KeyCode::Char('Y') => self.copy_path()?,
+            KeyCode::Char('W') => self.set_wallpaper()?,
             _ => {}
         }
         Ok(())

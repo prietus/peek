@@ -352,7 +352,7 @@ impl Viewer {
         Ok(())
     }
 
-    pub(super) fn draw_help_popup(&self, cols: u16, rows: u16) -> Result<()> {
+    pub(super) fn draw_help_popup(&mut self, cols: u16, rows: u16) -> Result<()> {
         let lines: Vec<(String, String)> = vec![
             ("n / Space / →".into(), "next image".into()),
             ("p / ←".into(), "previous image".into()),
@@ -385,9 +385,28 @@ impl Viewer {
             ("Ctrl+R".into(), "reload from disk".into()),
             ("P".into(), "slideshow play / pause".into()),
             (String::new(), String::new()),
+            ("o".into(), "open with external program".into()),
+            ("y · Y".into(), "copy image · copy path".into()),
+            ("W".into(), "set as wallpaper".into()),
+            (String::new(), String::new()),
             ("?".into(), "this help".into()),
             ("q / Esc".into(), "close popup · quit".into()),
         ];
+        // When the keymap can't fit even folded into two columns, show a
+        // window of it that j/k scroll through.
+        let max_lines = (rows as usize).saturating_sub(3);
+        let max_width = (cols as usize).saturating_sub(4);
+        if lines.len() > max_lines && !can_fold(&lines, max_lines, max_width, 3) && max_lines >= 2 {
+            let visible = max_lines - 1;
+            let max_scroll = lines.len() - visible;
+            self.help_scroll = self.help_scroll.min(max_scroll);
+            let mut window = lines[self.help_scroll..self.help_scroll + visible].to_vec();
+            window.push((
+                "j k".into(),
+                format!("scroll ({}–{} of {})", self.help_scroll + 1, self.help_scroll + visible, lines.len()),
+            ));
+            return self.draw_text_box("ipeek — keymap", &window, cols, rows);
+        }
         self.draw_text_box("ipeek — keymap", &lines, cols, rows)
     }
 
@@ -454,17 +473,30 @@ impl Viewer {
         let fg = Color::Rgb { r: 220, g: 220, b: 220 };
         let dim = Color::Rgb { r: 150, g: 150, b: 170 };
 
+        // Fit the box on screen: fold into two columns when too tall, then
+        // cut rows / shorten values if it still doesn't fit.
+        let gap = 3;
+        let max_inner = (cols as usize).saturating_sub(4);
+        let max_lines = (rows as usize).saturating_sub(3);
+        if max_inner < 10 || max_lines < 1 {
+            return Ok(());
+        }
+        let mut lines = fit_text_box(lines, max_lines, max_inner, gap);
         let left_w = lines.iter().map(|(l, _)| l.chars().count()).max().unwrap_or(0);
         let right_w = lines.iter().map(|(_, r)| r.chars().count()).max().unwrap_or(0);
-        let gap = 3;
-        let content_w = (left_w + gap + right_w).max(title.chars().count() + 4);
+        let content_w = (left_w + gap + right_w)
+            .max(title.chars().count() + 4)
+            .min(max_inner - 2);
+        let right_w = content_w.saturating_sub(left_w + gap);
+        for (_, r) in lines.iter_mut() {
+            if r.chars().count() > right_w {
+                *r = truncate_middle(r, right_w);
+            }
+        }
         let inner = content_w + 2; // 1 char padding each side
 
         let box_w = inner + 2;
         let box_h = lines.len() + 2;
-        if (box_w as u16) > cols || (box_h as u16) > rows.saturating_sub(1) {
-            return Ok(());
-        }
         let start_col = cols.saturating_sub(box_w as u16) / 2;
         let start_row = rows.saturating_sub(box_h as u16) / 2;
 
@@ -522,5 +554,75 @@ impl Viewer {
         )?;
         out.flush()?;
         Ok(())
+    }
+}
+
+/// True when `lines` folded into two columns fits `max_lines × max_width`.
+fn can_fold(lines: &[(String, String)], max_lines: usize, max_width: usize, gap: usize) -> bool {
+    let lw = lines.iter().map(|(l, _)| l.chars().count()).max().unwrap_or(0);
+    let rw = lines.iter().map(|(_, r)| r.chars().count()).max().unwrap_or(0);
+    lines.len().div_ceil(2) <= max_lines && 2 * (lw + gap + rw) + gap + 2 <= max_width
+}
+
+/// Shape popup rows to fit `max_lines` rows of at most `max_width` chars.
+/// Too many rows are folded into two side-by-side columns when that fits
+/// the width; whatever still doesn't fit is cut, ending with an "…" row.
+fn fit_text_box(
+    lines: &[(String, String)],
+    max_lines: usize,
+    max_width: usize,
+    gap: usize,
+) -> Vec<(String, String)> {
+    if lines.len() <= max_lines {
+        return lines.to_vec();
+    }
+    let lw = lines.iter().map(|(l, _)| l.chars().count()).max().unwrap_or(0);
+    let rw = lines.iter().map(|(_, r)| r.chars().count()).max().unwrap_or(0);
+    let half = lines.len().div_ceil(2);
+    let mut out: Vec<(String, String)> = if can_fold(lines, max_lines, max_width, gap) {
+        (0..half)
+            .map(|i| {
+                let (l1, r1) = &lines[i];
+                match lines.get(i + half) {
+                    Some((l2, r2)) => (l1.clone(), format!("{r1:<rw$}{:gap$}{l2:<lw$}{:gap$}{r2}", "", "")),
+                    None => (l1.clone(), r1.clone()),
+                }
+            })
+            .collect()
+    } else {
+        lines.to_vec()
+    };
+    if out.len() > max_lines {
+        out.truncate(max_lines.saturating_sub(1));
+        out.push(("…".into(), String::new()));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows(n: usize) -> Vec<(String, String)> {
+        (0..n).map(|i| (format!("k{i}"), format!("value {i}"))).collect()
+    }
+
+    #[test]
+    fn small_boxes_are_untouched() {
+        assert_eq!(fit_text_box(&rows(5), 10, 80, 3), rows(5));
+    }
+
+    #[test]
+    fn tall_boxes_fold_into_two_columns() {
+        let out = fit_text_box(&rows(10), 6, 80, 3);
+        assert_eq!(out.len(), 5);
+        assert!(out[0].1.contains("value 0") && out[0].1.contains("k5") && out[0].1.contains("value 5"));
+    }
+
+    #[test]
+    fn narrow_and_tall_boxes_are_cut() {
+        let out = fit_text_box(&rows(10), 4, 20, 3);
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[3].0, "…");
     }
 }

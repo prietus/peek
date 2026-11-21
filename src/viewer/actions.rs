@@ -9,6 +9,8 @@ use image::imageops::FilterType;
 
 use super::edit::{EditOp, parse_resize, save_image};
 use super::load::UndoState;
+use super::term::with_terminal_released;
+use crate::external;
 use super::{ExportOp, Viewer};
 use crate::util::resolve_dest_dir;
 
@@ -299,5 +301,127 @@ impl Viewer {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
         base.join(p)
+    }
+
+    /// Path of the file the user is acting on, or None when the list is empty.
+    fn target_path(&self) -> Option<PathBuf> {
+        self.files.get(self.target_index()).cloned()
+    }
+
+    fn report(&mut self, msg: String) -> Result<()> {
+        self.status_msg = Some(msg);
+        self.draw_status_only()
+    }
+
+    pub(super) fn open_external(&mut self) -> Result<()> {
+        let Some(path) = self.target_path() else {
+            return Ok(());
+        };
+        let cmd = self
+            .config
+            .open_command
+            .clone()
+            .unwrap_or_else(|| external::default_open_command().to_string());
+        let msg = match external::spawn_background(&cmd, &path) {
+            Ok(()) => format!("opened with {cmd}"),
+            Err(e) => format!("open failed: {e:#}"),
+        };
+        self.report(msg)
+    }
+
+    pub(super) fn copy_path(&mut self) -> Result<()> {
+        let Some(path) = self.target_path() else {
+            return Ok(());
+        };
+        let full = std::fs::canonicalize(&path).unwrap_or(path);
+        let msg = match external::copy_text(&full.to_string_lossy()) {
+            Ok(how) => format!("copied path via {how}"),
+            Err(e) => format!("copy failed: {e:#}"),
+        };
+        self.report(msg)
+    }
+
+    /// Copy the image as shown, including unsaved edits. In the grid the
+    /// selected file is decoded from disk.
+    pub(super) fn copy_image(&mut self) -> Result<()> {
+        let Some(path) = self.target_path() else {
+            return Ok(());
+        };
+        let from_screen = self.grid.is_none()
+            && self.loaded.as_ref().is_some_and(|l| l.path == path);
+        let result = if from_screen {
+            external::copy_image(self.loaded.as_ref().unwrap().current())
+        } else {
+            crate::decode::open(&path).and_then(|img| external::copy_image(&img))
+        };
+        let msg = match result {
+            Ok(how) => format!("copied image via {how}"),
+            Err(e) => format!("copy failed: {e:#}"),
+        };
+        self.report(msg)
+    }
+
+    pub(super) fn set_wallpaper(&mut self) -> Result<()> {
+        let Some(path) = self.target_path() else {
+            return Ok(());
+        };
+        let unsaved = self
+            .loaded
+            .as_ref()
+            .is_some_and(|l| l.path == path && l.modified);
+        let msg = match external::set_wallpaper(&path, self.config.wallpaper_command.as_deref()) {
+            Ok(how) if unsaved => format!("wallpaper set via {how} (from disk — save to include edits)"),
+            Ok(how) => format!("wallpaper set via {how}"),
+            Err(e) => format!("wallpaper failed: {e:#}"),
+        };
+        self.report(msg)
+    }
+
+    /// Run a `cmd.<key>` from the config. Commands starting with `!` take
+    /// over the terminal until they exit; the rest run in the background.
+    pub(super) fn run_user_command(&mut self, template: &str) -> Result<()> {
+        let Some(path) = self.target_path() else {
+            return Ok(());
+        };
+        if let Some(fg) = template.strip_prefix('!') {
+            let fg = fg.trim();
+            let status = with_terminal_released(|| {
+                let status = external::run_foreground(fg, &path);
+                // Give the user a chance to read the output before the
+                // viewer repaints over it.
+                print!("\n[ipeek] press Enter to return ");
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+                let _ = std::io::stdin().read_line(&mut String::new());
+                status
+            })?;
+            self.status_msg = Some(match status {
+                Ok(s) if s.success() => format!("ran: {fg}"),
+                Ok(s) => format!("`{fg}` exited with {s}"),
+                Err(e) => format!("failed: {e:#}"),
+            });
+            // The command may have renamed, deleted or edited the file.
+            self.refresh_after_command(&path);
+            return self.redraw_all();
+        }
+        let msg = match external::spawn_background(template, &path) {
+            Ok(()) => format!("started: {template}"),
+            Err(e) => format!("failed: {e:#}"),
+        };
+        self.report(msg)
+    }
+
+    fn refresh_after_command(&mut self, path: &std::path::Path) {
+        if !path.exists() {
+            self.remove_paths(&HashSet::from([path.to_path_buf()]));
+            return;
+        }
+        let unmodified = self.loaded.as_ref().is_some_and(|l| l.path == path && !l.modified);
+        if unmodified {
+            self.loaded = None;
+        }
+        self.preload_cache.remove(path);
+        if let Some(grid) = self.grid.as_mut() {
+            grid.forget(path);
+        }
     }
 }

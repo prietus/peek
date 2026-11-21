@@ -55,6 +55,17 @@ impl TerminalGuard {
     }
 }
 
+/// Hand the terminal back to a child process (normal screen, cooked mode)
+/// and restore the viewer's state afterwards.
+pub(super) fn with_terminal_released<T>(f: impl FnOnce() -> T) -> Result<T> {
+    execute!(io::stdout(), cursor::Show, LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+    let result = f();
+    enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
+    Ok(result)
+}
+
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = execute!(io::stdout(), cursor::Show, LeaveAlternateScreen);
