@@ -414,15 +414,7 @@ impl Viewer {
         // Cheap header-only dimension lookup when the image isn't in memory.
         let dims = loaded
             .map(|l| format!("{} × {}", l.img.width(), l.img.height()))
-            .or_else(|| {
-                image::ImageReader::open(path)
-                    .ok()?
-                    .with_guessed_format()
-                    .ok()?
-                    .into_dimensions()
-                    .ok()
-                    .map(|(w, h)| format!("{w} × {h}"))
-            })
+            .or_else(|| crate::decode::dimensions(path).map(|(w, h)| format!("{w} × {h}")))
             .unwrap_or_else(|| "(unavailable)".into());
         let modified = loaded.map(|l| l.modified).unwrap_or(false);
         let frames = loaded.and_then(|l| l.frames.as_ref().map(|f| f.len()));
@@ -442,6 +434,11 @@ impl Viewer {
         ];
         if let Some(n) = frames {
             lines.push(("frames".into(), format!("{n} (animated)")));
+        }
+        let exif = crate::metadata::exif_summary(path);
+        if !exif.is_empty() {
+            lines.push((String::new(), String::new()));
+            lines.extend(exif);
         }
         self.draw_text_box("image info", &lines, cols, rows)
     }

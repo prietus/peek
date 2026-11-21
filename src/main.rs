@@ -1,4 +1,6 @@
 mod cache;
+mod decode;
+mod metadata;
 mod detect;
 mod files;
 mod grid;
@@ -59,7 +61,7 @@ fn main() -> Result<()> {
         if !args.path.is_file() {
             anyhow::bail!("--one-shot requires a file path, got {}", args.path.display());
         }
-        let img: DynamicImage = image::open(&args.path)
+        let img: DynamicImage = decode::open(&args.path)
             .with_context(|| format!("failed to open image: {}", args.path.display()))?;
         let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
         renderer.render(&img, cols, rows)?;

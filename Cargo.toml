@@ -8,9 +8,10 @@ anyhow = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "tga", "pnm", "qoi", "hdr"] }
 image-webp = "0.2"
 icy_sixel = "0.5"
+kamadak-exif = "0.6"
 
 [profile.release]
 lto = true

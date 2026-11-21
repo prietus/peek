@@ -94,8 +94,7 @@ pub(super) fn load_image(path: &Path) -> Result<Loaded> {
             });
         }
 
-    let img = image::open(path)
-        .with_context(|| format!("failed to open {}", path.display()))?;
+    let img = crate::decode::open(path)?;
     Ok(Loaded {
         path: path.to_path_buf(),
         img,

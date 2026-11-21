@@ -6,7 +6,10 @@ use std::time::SystemTime;
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
 
-const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+const IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "jpe", "gif", "webp", "bmp", "tif", "tiff", "ico", "tga", "pnm", "pbm",
+    "pgm", "ppm", "pam", "qoi", "hdr",
+];
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SortMode {
@@ -148,11 +151,15 @@ pub fn has_image_ext(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// True for images, plus videos when ffmpeg is installed. Videos are filtered
-/// out when ffmpeg is missing so the user doesn't see broken thumbs.
+/// True for images, plus formats that need an external decoder (AVIF, HEIC,
+/// JPEG XL, videos) when that decoder is installed. Those are filtered out
+/// otherwise so the user doesn't see broken thumbs.
 pub fn has_media_ext(path: &Path) -> bool {
     if has_image_ext(path) {
         return true;
+    }
+    if crate::decode::needs_external(path) {
+        return crate::decode::external_available();
     }
     crate::video::is_video(path) && crate::video::ffmpeg_available()
 }
@@ -226,6 +233,7 @@ mod tests {
     fn image_ext_is_case_insensitive() {
         assert!(has_image_ext(Path::new("a/B.JPG")));
         assert!(has_image_ext(Path::new("x.webp")));
+        assert!(has_image_ext(Path::new("scan.TIFF")));
         assert!(!has_image_ext(Path::new("notes.txt")));
         assert!(!has_image_ext(Path::new("noext")));
     }

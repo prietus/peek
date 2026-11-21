@@ -25,6 +25,8 @@ pub fn thumb_cache_path(image_path: &Path, thumb_max: u32) -> Option<PathBuf> {
     mtime.hash(&mut h);
     size.hash(&mut h);
     thumb_max.hash(&mut h);
+    // Bump when thumbnail generation changes (v2: EXIF orientation applied).
+    2u8.hash(&mut h);
     let key = h.finish();
     let dir = thumb_cache_dir()?;
     let _ = std::fs::create_dir_all(&dir);
@@ -62,7 +64,7 @@ pub fn load_or_build_thumb(path: &Path, thumb_max: u32) -> Result<DynamicImage> 
         return Ok(image::open(cp)?);
     }
 
-    let img = image::open(path)?;
+    let img = crate::decode::open(path)?;
     let thumb = img.thumbnail(thumb_max, thumb_max);
     if let Some(cp) = cache_path.as_ref() {
         let _ = thumb.save(cp);

@@ -125,11 +125,11 @@ pub fn extract_preview(path: &Path) -> Result<(Vec<DynamicImage>, Duration)> {
 }
 
 /// RAII temp dir under `$TMPDIR` that wipes itself on drop. Avoids pulling in
-/// the `tempfile` crate for a single use site.
-struct TempDir(PathBuf);
+/// the `tempfile` crate.
+pub(crate) struct TempDir(pub(crate) PathBuf);
 
 impl TempDir {
-    fn new(prefix: &str) -> Result<Self> {
+    pub(crate) fn new(prefix: &str) -> Result<Self> {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
