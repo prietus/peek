@@ -40,7 +40,7 @@ impl Viewer {
             return Ok(());
         }
         // In grid mode the target is the selected thumb, otherwise the open image.
-        let target_idx = self.grid.as_ref().map(|g| g.selected).unwrap_or(self.index);
+        let target_idx = self.target_index();
         let path = self.files[target_idx].clone();
         let name = path
             .file_name()
@@ -52,31 +52,13 @@ impl Viewer {
             self.draw_status_only()?;
             return Ok(());
         }
-        self.files.remove(target_idx);
-        self.marked.remove(&path);
-        self.preload_cache.remove(&path);
-
-        if let Some(grid) = self.grid.as_mut() {
-            grid.forget(&path);
-            if !self.files.is_empty() && grid.selected >= self.files.len() {
-                grid.selected = self.files.len() - 1;
-            }
-        }
-        if target_idx < self.index {
-            self.index -= 1;
-        }
-        if !self.files.is_empty() && self.index >= self.files.len() {
-            self.index = self.files.len() - 1;
-        }
-
-        self.loaded = None;
         self.reset_view_state();
+        self.remove_paths(&HashSet::from([path]));
 
         if self.files.is_empty() {
             self.status_msg = Some(format!("deleted {name} — no images left, exiting"));
             self.draw_status_only()?;
         } else {
-            self.schedule_preloads();
             self.status_msg = Some(format!("deleted {name}"));
             self.redraw_all()?;
         }
@@ -161,41 +143,8 @@ impl Viewer {
         // the user can retry with a different destination.
         self.marked.retain(|p| !successful.contains(p));
 
-        // For Move: rebuild file list (paths are gone from the source dir).
-        if !moved.is_empty() {
-            let moved_set: HashSet<&PathBuf> = moved.iter().collect();
-            let view_path = self.files.get(self.index).cloned();
-            let grid_sel_path = self
-                .grid
-                .as_ref()
-                .and_then(|g| self.files.get(g.selected).cloned());
-
-            self.files.retain(|p| !moved_set.contains(p));
-
-            self.index = view_path
-                .as_ref()
-                .and_then(|p| self.files.iter().position(|f| f == p))
-                .unwrap_or_else(|| self.index.min(self.files.len().saturating_sub(1)));
-
-            if let Some(grid) = self.grid.as_mut() {
-                let new_sel = grid_sel_path
-                    .as_ref()
-                    .and_then(|p| self.files.iter().position(|f| f == p))
-                    .unwrap_or_else(|| grid.selected.min(self.files.len().saturating_sub(1)));
-                grid.selected = new_sel;
-                for p in &moved {
-                    grid.forget(p);
-                }
-            }
-
-            // The currently displayed image may have been moved.
-            if let Some(loaded) = self.loaded.as_ref()
-                && moved.iter().any(|p| p == &loaded.path) {
-                    self.loaded = None;
-                }
-            self.preload_cache
-                .retain(|p, _| !moved.iter().any(|m| m == p));
-        }
+        // Moved files are gone from where we were browsing.
+        self.remove_paths(&moved.into_iter().collect());
 
         self.status_msg = Some(if errors.is_empty() {
             format!("{ok}/{total} {label} to {}", target_dir.display())

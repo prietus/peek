@@ -72,7 +72,7 @@ fn main() -> Result<()> {
         args.recursive,
         args.sort,
     )?;
-    let mut viewer = Viewer::from_collection(collection, renderer)?;
+    let mut viewer = Viewer::from_collection(collection, renderer, args.sort)?;
     if let Some(secs) = args.slideshow {
         viewer.start_slideshow(secs);
     }

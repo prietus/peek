@@ -9,7 +9,7 @@ use image::DynamicImage;
 
 use super::edit::{CropState, MENU, MenuItem};
 use super::term::{begin_sync, end_sync, image_cell_rect};
-use super::{ExportOp, Viewer};
+use super::Viewer;
 use crate::grid;
 use crate::util::{human_bytes, pad_or_truncate, truncate_middle};
 
@@ -117,22 +117,8 @@ impl Viewer {
         let width = cols as usize;
 
         // Save-as input prompt takes priority over everything else.
-        if let Some(buf) = self.save_as_buffer.as_ref() {
-            let bg = Color::Rgb { r: 60, g: 80, b: 30 };
-            let fg = Color::Rgb { r: 230, g: 230, b: 230 };
-            let content = format!(" Save as: {buf}_");
-            return (bg, fg, pad_or_truncate(&content, width));
-        }
-
-        if let Some(prompt) = self.export_prompt.as_ref() {
-            let bg = Color::Rgb { r: 30, g: 60, b: 80 };
-            let fg = Color::Rgb { r: 230, g: 230, b: 230 };
-            let verb = match prompt.op {
-                ExportOp::Copy => "Copy",
-                ExportOp::Move => "Move",
-            };
-            let n = self.marked.len();
-            let content = format!(" {verb} {n} marked → dir: {}_", prompt.buffer);
+        if let Some(prompt) = self.prompt.as_ref() {
+            let (bg, fg, content) = self.prompt_line(prompt);
             return (bg, fg, pad_or_truncate(&content, width));
         }
 
@@ -190,12 +176,13 @@ impl Viewer {
                 format!("  ✓{}", self.marked.len())
             };
             let left = format!(
-                " grid · {}/{}{marks}  {}",
+                " grid · {}/{}{}{marks}  {}",
                 grid.selected + 1,
                 self.files.len(),
+                self.filter_badge(),
                 name
             );
-            let right = " Space mark · y copy · M move · ? help · q quit ";
+            let right = " Space mark · / filter · ? help · q quit ";
             let pad = width.saturating_sub(left.chars().count() + right.chars().count());
             let line = format!("{left}{}{right}", " ".repeat(pad));
             return (bg, fg, line.chars().take(width).collect());
@@ -222,18 +209,27 @@ impl Viewer {
             .map(|(i, n)| format!("  [{i}/{n}f]"))
             .unwrap_or_default();
         let left = format!(
-            " {play}{}/{}  {}{}{}{}",
+            " {play}{}/{}{}  {}{}{}{}",
             self.index + 1,
             self.files.len(),
+            self.filter_badge(),
             name,
             flag,
             zoom,
             frame_info,
         );
-        let right = " +/- zoom · s save · t grid · ? help · q quit ";
+        let right = " +/- zoom · / filter · t grid · ? help · q quit ";
         let pad = width.saturating_sub(left.chars().count() + right.chars().count());
         let line = format!("{left}{}{right}", " ".repeat(pad));
         (bg, fg, line.chars().take(width).collect())
+    }
+
+    /// " [/query]" when a filter is narrowing the listing, else "".
+    fn filter_badge(&self) -> String {
+        self.filter
+            .as_ref()
+            .map(|f| format!(" [/{f}]"))
+            .unwrap_or_default()
     }
 
     pub(super) fn draw_menu(&self, cols: u16, rows: u16, selected: usize) -> Result<()> {
@@ -366,6 +362,9 @@ impl Viewer {
             ("j k h l".into(), "navigate (pan when zoomed)".into()),
             ("g G".into(), "first / last".into()),
             ("t Tab".into(), "toggle grid".into()),
+            ("/".into(), "filter by name (empty = clear)".into()),
+            (":".into(), "go to image number".into()),
+            ("O".into(), "cycle sort: name/date/size/random".into()),
             (String::new(), String::new()),
             ("Space".into(), "(grid) mark / unmark".into()),
             ("A · u".into(), "(grid) mark all · clear".into()),

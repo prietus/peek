@@ -3,6 +3,7 @@ mod draw;
 mod edit;
 mod keys;
 mod load;
+mod prompt;
 mod term;
 
 use std::collections::{HashMap, HashSet};
@@ -15,12 +16,13 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyEventKind};
 use image::DynamicImage;
 
-use crate::files::Collection;
+use crate::files::{self, Collection, SortMode};
 use crate::grid::GridState;
 use crate::render::Renderer;
 
 use edit::CropState;
 use load::{Loaded, load_image};
+use prompt::Prompt;
 use term::TerminalGuard;
 
 const ZOOM_STEP: f32 = 1.25;
@@ -38,19 +40,19 @@ enum ExportOp {
     Move,
 }
 
-struct ExportPrompt {
-    op: ExportOp,
-    buffer: String,
-}
-
 
 pub struct Viewer {
+    /// Every file ipeek knows about, in the current sort order.
+    all_files: Vec<PathBuf>,
+    /// The files currently shown: `all_files` narrowed by `filter`.
     files: Vec<PathBuf>,
+    filter: Option<String>,
+    sort: SortMode,
     index: usize,
     renderer: Box<dyn Renderer>,
     loaded: Option<Loaded>,
     menu_selected: Option<usize>,
-    save_as_buffer: Option<String>,
+    prompt: Option<Prompt>,
     status_msg: Option<String>,
     zoom: f32,
     pan_x: f32,
@@ -66,7 +68,6 @@ pub struct Viewer {
     preloader: Preloader,
     preload_cache: HashMap<PathBuf, Loaded>,
     marked: HashSet<PathBuf>,
-    export_prompt: Option<ExportPrompt>,
 }
 
 struct PreloadResult {
@@ -122,7 +123,11 @@ impl Preloader {
 }
 
 impl Viewer {
-    pub fn from_collection(c: Collection, renderer: Box<dyn Renderer>) -> Result<Self> {
+    pub fn from_collection(
+        c: Collection,
+        renderer: Box<dyn Renderer>,
+        sort: SortMode,
+    ) -> Result<Self> {
         // When ipeek was pointed at a directory we land on the grid; with a
         // concrete file we go straight into the single-image view.
         let grid = if c.started_from_directory {
@@ -132,12 +137,15 @@ impl Viewer {
         };
 
         Ok(Self {
+            all_files: c.files.clone(),
             files: c.files,
+            filter: None,
+            sort,
             index: c.start_index,
             renderer,
             loaded: None,
             menu_selected: None,
-            save_as_buffer: None,
+            prompt: None,
             status_msg: None,
             zoom: 1.0,
             pan_x: 0.5,
@@ -153,7 +161,6 @@ impl Viewer {
             preloader: Preloader::spawn(),
             preload_cache: HashMap::new(),
             marked: HashSet::new(),
-            export_prompt: None,
         })
     }
 
@@ -180,12 +187,8 @@ impl Viewer {
             if event::poll(timeout)? {
                 match event::read()? {
                     Event::Key(k) if k.kind == KeyEventKind::Press => {
-                        if self.save_as_buffer.is_some() {
-                            if self.handle_save_as_key(k.code, k.modifiers)? {
-                                break;
-                            }
-                        } else if self.export_prompt.is_some() {
-                            if self.handle_export_prompt_key(k.code, k.modifiers)? {
+                        if self.prompt.is_some() {
+                            if self.handle_prompt_key(k.code, k.modifiers)? {
                                 break;
                             }
                         } else if self.confirm_delete {
@@ -224,8 +227,7 @@ impl Viewer {
 
     fn slideshow_active(&self) -> bool {
         self.slideshow_running
-            && self.save_as_buffer.is_none()
-            && self.export_prompt.is_none()
+            && self.prompt.is_none()
             && !self.confirm_delete
             && !self.help_open
             && !self.info_open
@@ -237,8 +239,7 @@ impl Viewer {
     /// Animation keeps ticking through help/info popups (they're transparent
     /// overlays), but pauses in modal states that take over the screen.
     fn animation_active(&self) -> bool {
-        self.save_as_buffer.is_none()
-            && self.export_prompt.is_none()
+        self.prompt.is_none()
             && !self.confirm_delete
             && self.menu_selected.is_none()
             && self.grid.is_none()
@@ -397,6 +398,111 @@ impl Viewer {
             .max(0.0)
             .min((ih - crop_h) as f32) as u32;
         Some(img.crop_imm(left, top, crop_w, crop_h))
+    }
+
+    /// Index of the file the user is acting on: the grid selection when the
+    /// grid is open, otherwise the image on screen.
+    fn target_index(&self) -> usize {
+        self.grid.as_ref().map(|g| g.selected).unwrap_or(self.index)
+    }
+
+    /// Move to `idx` in whichever mode is active.
+    fn go_to(&mut self, idx: usize) {
+        if let Some(grid) = self.grid.as_mut() {
+            grid.jump_to(idx, self.files.len());
+        } else {
+            self.jump_to(idx);
+        }
+    }
+
+    /// Recompute `files` from `all_files` + `filter`, keeping the open image
+    /// and the grid selection on the same paths when they survive.
+    fn rebuild_listing(&mut self) {
+        let view_path = self.files.get(self.index).cloned();
+        let sel_path = self.grid.as_ref().and_then(|g| self.files.get(g.selected).cloned());
+
+        let query = self.filter.as_deref().unwrap_or("");
+        self.files = self
+            .all_files
+            .iter()
+            .filter(|p| files::matches_filter(p, query))
+            .cloned()
+            .collect();
+        // A filter that empties the listing (e.g. after deleting the last
+        // match) would leave nothing to show, so fall back to everything.
+        if self.files.is_empty() && !self.all_files.is_empty() {
+            self.filter = None;
+            self.files = self.all_files.clone();
+        }
+
+        let last = self.files.len().saturating_sub(1);
+        let find = |p: &Option<PathBuf>| p.as_ref().and_then(|p| self.files.iter().position(|f| f == p));
+        let new_index = find(&view_path).unwrap_or(self.index.min(last));
+        let new_sel = find(&sel_path);
+        if let Some(grid) = self.grid.as_mut() {
+            grid.selected = new_sel.unwrap_or(grid.selected.min(last));
+        }
+        if self.files.get(new_index) != view_path.as_ref() {
+            self.loaded = None;
+            self.reset_view_state();
+        }
+        self.index = new_index;
+        if !self.files.is_empty() {
+            self.schedule_preloads();
+        }
+    }
+
+    /// Forget files that no longer exist at their old path (deleted/moved).
+    fn remove_paths(&mut self, gone: &HashSet<PathBuf>) {
+        if gone.is_empty() {
+            return;
+        }
+        // Keep the cursor near where it was rather than jumping to the start.
+        let view_path = self.files.get(self.index).cloned();
+        if view_path.as_ref().is_some_and(|p| gone.contains(p)) {
+            self.loaded = None;
+        }
+        self.all_files.retain(|p| !gone.contains(p));
+        self.marked.retain(|p| !gone.contains(p));
+        self.preload_cache.retain(|p, _| !gone.contains(p));
+        if let Some(grid) = self.grid.as_mut() {
+            for p in gone {
+                grid.forget(p);
+            }
+        }
+        // Surviving paths keep their position; if the open image itself
+        // vanished, the index stays put so the next file slides into view.
+        self.rebuild_listing();
+    }
+
+    fn set_filter(&mut self, query: &str) -> Result<()> {
+        let query = query.trim();
+        if query.is_empty() {
+            self.filter = None;
+            self.status_msg = Some(format!("filter cleared — {} files", self.all_files.len()));
+        } else if !self.all_files.iter().any(|p| files::matches_filter(p, query)) {
+            self.status_msg = Some(format!("no files match \"{query}\""));
+            return self.draw_status_only();
+        } else {
+            self.filter = Some(query.to_string());
+        }
+        self.rebuild_listing();
+        if let Some(f) = self.filter.as_ref() {
+            self.status_msg = Some(format!(
+                "filter \"{f}\": {} of {} files",
+                self.files.len(),
+                self.all_files.len()
+            ));
+        }
+        self.redraw_all()
+    }
+
+    fn cycle_sort(&mut self) -> Result<()> {
+        self.sort = self.sort.next();
+        files::sort_files(&mut self.all_files, self.sort);
+        self.rebuild_listing();
+        self.status_msg = Some(format!("sorted by {}", self.sort.label()));
+        self.redraw_all()
     }
 
     fn ensure_loaded(&mut self) -> Result<()> {

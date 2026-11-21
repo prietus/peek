@@ -8,12 +8,57 @@ use clap::ValueEnum;
 
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
-#[derive(Copy, Clone, Debug, ValueEnum)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SortMode {
     Name,
     Date,
     Size,
     Random,
+}
+
+impl SortMode {
+    /// Next mode in the cycle used by the in-viewer sort toggle.
+    pub fn next(self) -> Self {
+        match self {
+            SortMode::Name => SortMode::Date,
+            SortMode::Date => SortMode::Size,
+            SortMode::Size => SortMode::Random,
+            SortMode::Random => SortMode::Name,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SortMode::Name => "name",
+            SortMode::Date => "date",
+            SortMode::Size => "size",
+            SortMode::Random => "random",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        <Self as ValueEnum>::from_str(s, true).ok()
+    }
+}
+
+/// True when every whitespace-separated term of `query` occurs in the file
+/// name (case-insensitive). Terms containing a `/` are matched against the
+/// whole path instead, so `trip/ beach` finds beach shots inside "trip" dirs.
+/// An empty query matches everything.
+pub fn matches_filter(path: &Path, query: &str) -> bool {
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let full = path.to_string_lossy().to_lowercase();
+    query.split_whitespace().all(|term| {
+        let term = term.to_lowercase();
+        if term.contains('/') {
+            full.contains(&term)
+        } else {
+            name.contains(&term)
+        }
+    })
 }
 
 /// Result of resolving the CLI args into a flat list of image paths.
@@ -112,7 +157,7 @@ pub fn has_media_ext(path: &Path) -> bool {
     crate::video::is_video(path) && crate::video::ffmpeg_available()
 }
 
-fn sort_files(files: &mut [PathBuf], mode: SortMode) {
+pub fn sort_files(files: &mut [PathBuf], mode: SortMode) {
     match mode {
         SortMode::Name => files.sort(),
         SortMode::Date => {
@@ -183,6 +228,29 @@ mod tests {
         assert!(has_image_ext(Path::new("x.webp")));
         assert!(!has_image_ext(Path::new("notes.txt")));
         assert!(!has_image_ext(Path::new("noext")));
+    }
+
+    #[test]
+    fn filter_terms_are_anded_and_case_insensitive() {
+        let p = Path::new("/photos/Trip-2024/IMG_Beach_01.JPG");
+        assert!(matches_filter(p, ""));
+        assert!(matches_filter(p, "beach"));
+        assert!(matches_filter(p, "img jpg"));
+        assert!(!matches_filter(p, "beach sunset"));
+        // Directory names only match through a term containing '/'.
+        assert!(!matches_filter(p, "trip"));
+        assert!(matches_filter(p, "trip-2024/ beach"));
+    }
+
+    #[test]
+    fn sort_mode_cycle_and_parse() {
+        let mut m = SortMode::Name;
+        for _ in 0..4 {
+            m = m.next();
+        }
+        assert_eq!(m, SortMode::Name);
+        assert_eq!(SortMode::parse("Date"), Some(SortMode::Date));
+        assert_eq!(SortMode::parse("bogus"), None);
     }
 
     #[test]
