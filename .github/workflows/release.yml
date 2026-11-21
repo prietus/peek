@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             archive: ipeek-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
           - os: ubuntu-24.04
