@@ -3,7 +3,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use crossterm::terminal;
 
-use super::edit::{CropState, EditOp, MENU, MenuItem, next_op_index, first_op_index};
+use super::edit::{BRIGHTNESS_STEP, CONTRAST_STEP, CropState, EditOp, MENU, MenuItem, next_op_index, first_op_index};
 use super::prompt::PromptKind;
 use super::{CROP_STEP, ExportOp, Viewer};
 use crate::grid::GridState;
@@ -170,6 +170,12 @@ impl Viewer {
             KeyCode::Char('R') => self.apply(EditOp::RotateCcw)?,
             KeyCode::Char('f') => self.apply(EditOp::FlipH)?,
             KeyCode::Char('F') => self.apply(EditOp::FlipV)?,
+            KeyCode::Char('b') => self.apply(EditOp::Brightness(BRIGHTNESS_STEP))?,
+            KeyCode::Char('B') => self.apply(EditOp::Brightness(-BRIGHTNESS_STEP))?,
+            KeyCode::Char('e') => self.apply(EditOp::Contrast(CONTRAST_STEP))?,
+            KeyCode::Char('E') => self.apply(EditOp::Contrast(-CONTRAST_STEP))?,
+            KeyCode::Char('u') => self.undo()?,
+            KeyCode::Char('z') => self.open_resize_prompt()?,
 
             KeyCode::Char('s') => self.save_current()?,
             KeyCode::Char('S') => self.open_prompt(PromptKind::SaveAs, String::new())?,
@@ -332,15 +338,30 @@ impl Viewer {
                 self.redraw_menu_only()?;
             }
             KeyCode::Enter => {
-                if let MenuItem::Op(_, op) = &MENU[sel] {
-                    let op = *op;
-                    self.menu_selected = None;
-                    self.apply(op)?;
+                match &MENU[sel] {
+                    MenuItem::Op(_, op) => {
+                        let op = *op;
+                        self.menu_selected = None;
+                        self.apply(op)?;
+                    }
+                    MenuItem::Resize(_) => {
+                        self.menu_selected = None;
+                        self.redraw_all()?;
+                        self.open_resize_prompt()?;
+                    }
+                    MenuItem::Separator => {}
                 }
             }
             _ => {}
         }
         Ok(false)
+    }
+
+    fn open_resize_prompt(&mut self) -> Result<()> {
+        if self.ensure_loaded().is_ok() {
+            self.open_prompt(PromptKind::Resize, String::new())?;
+        }
+        Ok(())
     }
 
     /// Keys that behave the same in the grid and the single-image view.

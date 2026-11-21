@@ -4,35 +4,30 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use super::edit::EditOp;
+use image::DynamicImage;
+use image::imageops::FilterType;
+
+use super::edit::{EditOp, parse_resize, save_image};
+use super::load::UndoState;
 use super::{ExportOp, Viewer};
 use crate::util::resolve_dest_dir;
+
+/// How many edits `u` can step back through per image.
+const MAX_UNDO: usize = 10;
 
 impl Viewer {
     pub(super) fn apply_crop(&mut self) -> Result<()> {
         let Some(crop) = self.crop.take() else {
             return Ok(());
         };
-        if let Some(mut loaded) = self.loaded.take() {
-            let base = match loaded.frames {
-                Some(mut frames) => {
-                    let idx = loaded.frame_idx.min(frames.len().saturating_sub(1));
-                    frames.swap_remove(idx).img
-                }
-                None => loaded.img,
-            };
-            let (x0, y0, cw, ch) = crop.pixel_rect(base.width(), base.height());
-            let cropped = base.crop_imm(x0, y0, cw, ch);
-            self.status_msg = Some(format!("cropped to {cw}×{ch}"));
-            loaded.img = cropped;
-            loaded.frames = None;
-            loaded.frame_idx = 0;
-            loaded.modified = true;
-            self.loaded = Some(loaded);
-        }
-        self.reset_view_state();
-        self.redraw_all()?;
-        Ok(())
+        let (iw, ih) = match self.loaded.as_ref() {
+            Some(l) => (l.current().width(), l.current().height()),
+            None => return self.redraw_all(),
+        };
+        let (x0, y0, cw, ch) = crop.pixel_rect(iw, ih);
+        self.edit_with(format!("cropped to {cw}×{ch}"), true, |img| {
+            img.crop_imm(x0, y0, cw, ch)
+        })
     }
 
     pub(super) fn delete_current(&mut self) -> Result<()> {
@@ -162,25 +157,82 @@ impl Viewer {
     }
 
     pub(super) fn apply(&mut self, op: EditOp) -> Result<()> {
-        self.ensure_loaded()?;
-        if let Some(mut loaded) = self.loaded.take() {
-            // Editing an animation freezes it to the currently displayed frame
-            // — saving a multi-frame image with edits applied isn't supported,
-            // so we collapse to a single frame instead.
-            let base = match loaded.frames.as_ref() {
-                Some(f) => f[loaded.frame_idx].img.clone(),
-                None => loaded.img,
-            };
-            loaded.img = op.apply(base);
-            loaded.frames = None;
-            loaded.frame_idx = 0;
-            loaded.modified = true;
-            self.loaded = Some(loaded);
+        self.edit_with(op.describe(), op.changes_geometry(), |img| op.apply(img))
+    }
+
+    pub(super) fn resize_to(&mut self, spec: &str) -> Result<()> {
+        let Some((w, h)) = self
+            .loaded
+            .as_ref()
+            .map(|l| (l.current().width(), l.current().height()))
+        else {
+            return Ok(());
+        };
+        match parse_resize(spec, w, h) {
+            Some((nw, nh)) => self.edit_with(format!("resized {w}×{h} → {nw}×{nh}"), true, |img| {
+                img.resize_exact(nw, nh, FilterType::Lanczos3)
+            }),
+            None => {
+                self.status_msg =
+                    Some(format!("bad size \"{spec}\" — try 50%, 800, x600, 800x600 or 800x600!"));
+                self.draw_status_only()
+            }
         }
-        // Rotate changes dimensions; safest to reset zoom/pan.
+    }
+
+    /// Run an edit on the image on screen, recording the previous state for
+    /// undo. Editing an animation freezes it to the displayed frame; undo
+    /// brings the animation back.
+    fn edit_with(
+        &mut self,
+        description: String,
+        reset_view: bool,
+        f: impl FnOnce(&DynamicImage) -> DynamicImage,
+    ) -> Result<()> {
+        if let Err(e) = self.ensure_loaded() {
+            self.status_msg = Some(format!("cannot edit: {e}"));
+            return self.draw_status_only();
+        }
+        let Some(loaded) = self.loaded.as_mut() else {
+            return Ok(());
+        };
+        let edited = f(loaded.current());
+        let previous = std::mem::replace(&mut loaded.img, edited);
+        loaded.undo.push(UndoState {
+            img: previous,
+            frames: loaded.frames.take(),
+            frame_idx: loaded.frame_idx,
+            modified: loaded.modified,
+        });
+        if loaded.undo.len() > MAX_UNDO {
+            loaded.undo.remove(0);
+        }
+        loaded.frame_idx = 0;
+        loaded.modified = true;
+        self.status_msg = Some(description);
+        if reset_view {
+            self.reset_view_state();
+        }
+        self.redraw_all()
+    }
+
+    pub(super) fn undo(&mut self) -> Result<()> {
+        let Some(loaded) = self.loaded.as_mut() else {
+            return Ok(());
+        };
+        let Some(state) = loaded.undo.pop() else {
+            self.status_msg = Some("nothing to undo".into());
+            return self.draw_status_only();
+        };
+        loaded.img = state.img;
+        loaded.frames = state.frames;
+        loaded.frame_idx = state.frame_idx;
+        loaded.frame_last = Instant::now();
+        loaded.modified = state.modified;
+        let left = loaded.undo.len();
+        self.status_msg = Some(format!("undone ({left} more)"));
         self.reset_view_state();
-        self.redraw_all()?;
-        Ok(())
+        self.redraw_all()
     }
 
     pub(super) fn save_current(&mut self) -> Result<()> {
@@ -199,10 +251,15 @@ impl Viewer {
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
-        match loaded.img.save(&path) {
+        match save_image(&loaded.img, &path) {
             Ok(()) => {
                 if let Some(l) = self.loaded.as_mut() {
                     l.modified = false;
+                    // The file on disk now matches the current image, so
+                    // every earlier state differs from it.
+                    for u in &mut l.undo {
+                        u.modified = true;
+                    }
                 }
                 self.status_msg = Some(format!("saved: {display}"));
             }
@@ -220,7 +277,7 @@ impl Viewer {
             return;
         };
         let target = self.resolve_save_path(input);
-        match loaded.img.save(&target) {
+        match save_image(&loaded.img, &target) {
             Ok(()) => {
                 let display = target
                     .file_name()

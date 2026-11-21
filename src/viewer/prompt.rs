@@ -14,6 +14,7 @@ pub(super) enum PromptKind {
     Export(ExportOp),
     Filter,
     Jump,
+    Resize,
 }
 
 pub(super) struct Prompt {
@@ -73,6 +74,14 @@ impl Viewer {
                 }
             }
             PromptKind::Filter => self.set_filter(text),
+            PromptKind::Resize => {
+                if text.is_empty() {
+                    self.status_msg = Some("resize cancelled".into());
+                    self.draw_status_only()
+                } else {
+                    self.resize_to(text)
+                }
+            }
             PromptKind::Jump => {
                 match text.parse::<usize>() {
                     Ok(n) if n >= 1 && n <= self.files.len() => self.go_to(n - 1),
@@ -114,6 +123,18 @@ impl Viewer {
                     Color::Rgb { r: 70, g: 40, b: 90 },
                     fg,
                     format!(" /{buf}_   ({n} match{}, empty = show all)", if n == 1 { "" } else { "es" }),
+                )
+            }
+            PromptKind::Resize => {
+                let dims = self
+                    .loaded
+                    .as_ref()
+                    .map(|l| format!("{}×{}", l.current().width(), l.current().height()))
+                    .unwrap_or_default();
+                (
+                    Color::Rgb { r: 60, g: 80, b: 30 },
+                    fg,
+                    format!(" Resize {dims} to (50%, 800, x600, 800x600, 800x600!): {buf}_"),
                 )
             }
             PromptKind::Jump => (

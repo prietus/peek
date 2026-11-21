@@ -241,10 +241,7 @@ impl Viewer {
 
         let inner_width = MENU
             .iter()
-            .filter_map(|item| match item {
-                MenuItem::Op(label, _) => Some(label.chars().count()),
-                MenuItem::Separator => None,
-            })
+            .filter_map(|item| item.label().map(|l| l.chars().count()))
             .max()
             .unwrap_or(20)
             + 2;
@@ -267,7 +264,7 @@ impl Viewer {
         for (i, item) in MENU.iter().enumerate() {
             queue!(out, cursor::MoveTo(start_col, start_row + 1 + i as u16))?;
             match item {
-                MenuItem::Op(label, _) => {
+                MenuItem::Op(label, _) | MenuItem::Resize(label) => {
                     let is_selected = i == selected;
                     let content = format!(" {label:<width$} ", width = inner_width - 2);
                     queue!(out, SetBackgroundColor(bg), SetForegroundColor(fg), Print("│"))?;
@@ -377,7 +374,10 @@ impl Viewer {
             (String::new(), String::new()),
             ("r R".into(), "rotate CW / CCW".into()),
             ("f F".into(), "flip horizontal / vertical".into()),
-            ("m".into(), "edit menu".into()),
+            ("b B · e E".into(), "brightness ± · contrast ±".into()),
+            ("z".into(), "resize (50%, 800, 800x600…)".into()),
+            ("u".into(), "undo last edit".into()),
+            ("m".into(), "edit menu (grayscale, blur…)".into()),
             ("c".into(), "crop (hjkl move · HJKL resize)".into()),
             ("s S".into(), "save / save-as".into()),
             (String::new(), String::new()),

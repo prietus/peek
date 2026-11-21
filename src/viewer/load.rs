@@ -22,6 +22,16 @@ pub(super) struct Loaded {
     pub(super) frames: Option<Vec<Frame>>,
     pub(super) frame_idx: usize,
     pub(super) frame_last: Instant,
+    /// Previous states, most recent last, for undo.
+    pub(super) undo: Vec<UndoState>,
+}
+
+/// Snapshot of a `Loaded` taken just before an edit.
+pub(super) struct UndoState {
+    pub(super) img: DynamicImage,
+    pub(super) frames: Option<Vec<Frame>>,
+    pub(super) frame_idx: usize,
+    pub(super) modified: bool,
 }
 
 impl Loaded {
@@ -54,6 +64,7 @@ pub(super) fn load_image(path: &Path) -> Result<Loaded> {
             frames: Some(frames),
             frame_idx: 0,
             frame_last: Instant::now(),
+        undo: Vec::new(),
         });
     }
 
@@ -79,6 +90,7 @@ pub(super) fn load_image(path: &Path) -> Result<Loaded> {
                 frames: Some(frames),
                 frame_idx: 0,
                 frame_last: Instant::now(),
+        undo: Vec::new(),
             });
         }
 
@@ -91,6 +103,7 @@ pub(super) fn load_image(path: &Path) -> Result<Loaded> {
         frames: None,
         frame_idx: 0,
         frame_last: Instant::now(),
+        undo: Vec::new(),
     })
 }
 
