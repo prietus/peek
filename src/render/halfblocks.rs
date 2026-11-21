@@ -3,18 +3,15 @@ use std::io::{self, Write};
 use anyhow::Result;
 use image::{DynamicImage, imageops::FilterType};
 
-use super::{Renderer, fit_to_cells};
+use super::Renderer;
 
 pub struct HalfblocksRenderer;
 
 impl Renderer for HalfblocksRenderer {
-    fn render(&self, img: &DynamicImage, cols: u16, rows: u16) -> Result<()> {
-        let (target_w, target_h) = fit_to_cells(img.width(), img.height(), cols, rows);
-
-        // Each cell renders TWO vertical pixels (upper half + lower half).
-        // So we render at width=cols, height=rows*2, then pair rows.
-        let cell_w = target_w;
-        let cell_h = if target_h % 2 == 0 { target_h } else { target_h + 1 };
+    fn render_fill(&self, img: &DynamicImage, cols: u16, rows: u16) -> Result<()> {
+        // Each cell shows two vertical pixels (upper + lower half block).
+        let cell_w = cols.max(1) as u32;
+        let cell_h = rows.max(1) as u32 * 2;
 
         let resized = img
             .resize_exact(cell_w, cell_h, FilterType::Triangle)

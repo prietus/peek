@@ -31,8 +31,6 @@ const MAX_ZOOM: f32 = 32.0;
 const PAN_STEP_FRAC: f32 = 0.1;
 const DEFAULT_SLIDESHOW_SECS: f32 = 5.0;
 pub(super) const CROP_STEP: f32 = 0.02;
-/// Matches the fit-to-cells logic each renderer uses to lay the image down.
-pub(super) const CELL_ASPECT_H_OVER_W: f64 = 2.0;
 
 
 #[derive(Copy, Clone, Debug)]

@@ -5,7 +5,6 @@ use crossterm::cursor;
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 
-use super::CELL_ASPECT_H_OVER_W;
 
 /// DEC private mode 2026 — synchronized update. Terminals that don't recognise
 /// the escape ignore it silently, so it's safe to send unconditionally.
@@ -23,25 +22,11 @@ pub(super) fn end_sync() -> Result<()> {
     Ok(())
 }
 
-/// Compute the cell rectangle the rendered image occupies inside (cols, rows).
-/// Mirrors the aspect-preserving fit logic each protocol's renderer applies, so
-/// overlays can be drawn relative to the image instead of the full screen.
+/// Cell rectangle (x, y, w, h) the rendered image occupies inside
+/// (cols, rows). Renderers anchor the image at (0, 0) and size it with
+/// `render::fit_cells`, so overlays can be drawn relative to the image.
 pub(super) fn image_cell_rect(img_w: u32, img_h: u32, cols: u16, rows: u16) -> (u16, u16, u16, u16) {
-    let img_aspect = img_w as f64 / img_h.max(1) as f64;
-    let target = img_aspect * CELL_ASPECT_H_OVER_W;
-    let avail = cols as f64 / rows.max(1) as f64;
-    let (c, r) = if target >= avail {
-        let c = cols;
-        let r = ((c as f64) / target).round() as u16;
-        (c, r)
-    } else {
-        let r = rows;
-        let c = ((r as f64) * target).round() as u16;
-        (c, r)
-    };
-    let c = c.max(1).min(cols);
-    let r = r.max(1).min(rows);
-    // Renderers anchor the image at (0, 0); overlays should match.
+    let (c, r) = crate::render::fit_cells(img_w, img_h, cols, rows);
     (0, 0, c, r)
 }
 

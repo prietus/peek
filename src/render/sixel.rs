@@ -4,19 +4,17 @@ use anyhow::{Result, anyhow};
 use icy_sixel::SixelImage;
 use image::{DynamicImage, imageops::FilterType};
 
-use super::{Renderer, fit_to_cells};
+use super::{Renderer, cell_pixel_size};
 
 pub struct SixelRenderer;
 
 impl Renderer for SixelRenderer {
-    fn render(&self, img: &DynamicImage, cols: u16, rows: u16) -> Result<()> {
-        // Sixel needs pixel dimensions; estimate from cell grid (cell ~ 1×2 px ratio
-        // is too coarse for a graphic protocol, so use a richer 10×20 multiplier).
-        let cell_px_w = 10u32;
-        let cell_px_h = 20u32;
-        let (cell_w, cell_h) = fit_to_cells(img.width(), img.height(), cols, rows);
-        let target_w = cell_w * cell_px_w;
-        let target_h = cell_h * cell_px_h;
+    fn render_fill(&self, img: &DynamicImage, cols: u16, rows: u16) -> Result<()> {
+        // Sixel is pixel-addressed: convert the cell box to pixels with the
+        // terminal's real cell size.
+        let (cell_px_w, cell_px_h) = cell_pixel_size();
+        let target_w = cols.max(1) as u32 * cell_px_w;
+        let target_h = rows.max(1) as u32 * cell_px_h;
 
         let resized = img
             .resize_exact(target_w, target_h, FilterType::Triangle)

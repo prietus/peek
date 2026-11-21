@@ -15,9 +15,10 @@ const THUMB_MAX: u32 = 256;
 /// Each thumbnail slot occupies this many cells in the grid (last row reserved for label).
 const THUMB_CELLS_W: u16 = 22;
 const THUMB_CELLS_H: u16 = 11;
-/// Canvas pixels per cell. Higher = sharper output but bigger canvas.
+/// Canvas pixels per cell horizontally; the vertical count follows the
+/// terminal's real cell shape so thumbnails aren't stretched. Higher =
+/// sharper output but a bigger canvas to encode on every redraw.
 const PX_PER_CELL_W: u32 = 8;
-const PX_PER_CELL_H: u32 = 16;
 
 pub struct GridState {
     pub selected: usize,
@@ -70,8 +71,16 @@ impl GridState {
 struct Layout {
     grid_cols: u16,
     grid_rows: u16,
+    /// Canvas pixels per cell row.
+    px_per_cell_h: u32,
     canvas_w: u32,
     canvas_h: u32,
+}
+
+/// Canvas pixel rows per cell for a terminal whose cells are `cell_aspect`
+/// times taller than wide.
+fn px_per_cell_h(cell_aspect: f64) -> u32 {
+    ((PX_PER_CELL_W as f64 * cell_aspect).round() as u32).clamp(PX_PER_CELL_W, PX_PER_CELL_W * 4)
 }
 
 fn compute_layout(cols: u16, rows: u16) -> Layout {
@@ -79,10 +88,12 @@ fn compute_layout(cols: u16, rows: u16) -> Layout {
     let grid_cols = (cols / THUMB_CELLS_W).max(1);
     let grid_rows = (avail_rows / THUMB_CELLS_H).max(1);
     let canvas_w = grid_cols as u32 * THUMB_CELLS_W as u32 * PX_PER_CELL_W;
-    let canvas_h = grid_rows as u32 * THUMB_CELLS_H as u32 * PX_PER_CELL_H;
+    let px_per_cell_h = px_per_cell_h(crate::render::cell_aspect());
+    let canvas_h = grid_rows as u32 * THUMB_CELLS_H as u32 * px_per_cell_h;
     Layout {
         grid_cols,
         grid_rows,
+        px_per_cell_h,
         canvas_w,
         canvas_h,
     }
@@ -100,11 +111,14 @@ pub fn render(
     state.ensure_visible(&layout);
 
     let canvas = build_canvas(state, files, &layout)?;
-    // The renderer consumes the canvas as a single image and fits it to the
-    // (cols × avail_rows) cell grid. The canvas aspect matches the grid so
-    // each thumb lines up with its cell rectangle.
-    let avail_rows = layout.grid_rows * THUMB_CELLS_H;
-    renderer.render(&canvas, cols, avail_rows)?;
+    // Stretch the canvas over exactly the cells the slots occupy so every
+    // thumbnail lines up with its label row. The canvas already has the
+    // cells' shape, so the stretch is at most a rounding error.
+    renderer.render_fill(
+        &canvas,
+        layout.grid_cols * THUMB_CELLS_W,
+        layout.grid_rows * THUMB_CELLS_H,
+    )?;
 
     draw_labels(state, files, marked, &layout)?;
     Ok(())
@@ -119,10 +133,10 @@ fn build_canvas(
     let mut canvas = RgbaImage::from_pixel(layout.canvas_w, layout.canvas_h, bg);
 
     let slot_w_px = THUMB_CELLS_W as u32 * PX_PER_CELL_W;
-    let slot_h_px = THUMB_CELLS_H as u32 * PX_PER_CELL_H;
+    let slot_h_px = THUMB_CELLS_H as u32 * layout.px_per_cell_h;
     // Reserve the last cell row of the slot for the label.
     let thumb_max_px_w = slot_w_px - 4; // 2 px padding each side
-    let thumb_max_px_h = (THUMB_CELLS_H - 1) as u32 * PX_PER_CELL_H - 4;
+    let thumb_max_px_h = (THUMB_CELLS_H - 1) as u32 * layout.px_per_cell_h - 4;
 
     let start_index = state.scroll_row * layout.grid_cols as usize;
     let visible = (layout.grid_cols * layout.grid_rows) as usize;
@@ -144,7 +158,7 @@ fn build_canvas(
             .to_rgba8();
 
         // Center the thumb within its image area.
-        let img_area_h = (THUMB_CELLS_H - 1) as u32 * PX_PER_CELL_H;
+        let img_area_h = (THUMB_CELLS_H - 1) as u32 * layout.px_per_cell_h;
         let off_x = slot_x + (slot_w_px - resized.width()) / 2;
         let off_y = slot_y + (img_area_h - resized.height()) / 2;
         let _ = canvas.copy_from(&resized, off_x, off_y);
@@ -236,4 +250,18 @@ fn draw_labels(
     queue!(out, ResetColor)?;
     out.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canvas_rows_follow_cell_shape() {
+        assert_eq!(px_per_cell_h(2.0), 16);
+        assert_eq!(px_per_cell_h(26.0 / 12.0), 17);
+        // Nonsense metrics stay within sane bounds.
+        assert_eq!(px_per_cell_h(0.1), PX_PER_CELL_W);
+        assert_eq!(px_per_cell_h(100.0), PX_PER_CELL_W * 4);
+    }
 }
