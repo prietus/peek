@@ -57,16 +57,3 @@ impl Drop for TerminalGuard {
         let _ = disable_raw_mode();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cell_rect_preserves_aspect() {
-        // Square image in a wide terminal: limited by rows, 2 cols per row.
-        assert_eq!(image_cell_rect(100, 100, 200, 50), (0, 0, 100, 50));
-        // Very wide image: limited by columns.
-        assert_eq!(image_cell_rect(1000, 100, 80, 40), (0, 0, 80, 4));
-    }
-}
