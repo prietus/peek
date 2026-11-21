@@ -1,7 +1,7 @@
 # Maintainer: Carlos Prieto <cprieto.ortiz@gmail.com>
 pkgname=ipeek-bin
 _pkgname=ipeek
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Terminal image viewer (Kitty/Sixel/iTerm2/half-blocks) — prebuilt binary"
 arch=('x86_64')
